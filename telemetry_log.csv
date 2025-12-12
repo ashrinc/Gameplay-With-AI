@@ -1,0 +1,1 @@
+timestamp,dt_ms,score,elapsed_time_s,blocks_spawned,blocks_avoided,blocks_collided,reaction_time_latest_ms,reaction_time_moving_avg_ms,accuracy,score_rate_per_s,mistakes,time_since_last_error_s,current_fall_speed_pps,current_spawn_interval_ms
