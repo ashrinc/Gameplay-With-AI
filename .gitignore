@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.env
+
+# Node
+node_modules/
+
+# SQLite DB
+*.db
+
+# OS
+.DS_Store
+
+# VSCode
+.vscode/
