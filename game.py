@@ -222,7 +222,7 @@ def main():
     # ✅ ADD THIS (send to backend)
             try:
                 requests.post(
-                    "http://127.0.0.1:8000/agent/decision",
+                    "https://gameplay-ai-backend.onrender.com/agent/decision",
                     json={
                         "action": action,
                         "target_speed": _target_fall_speed,
@@ -257,7 +257,7 @@ def main():
 
         try:
             requests.post(
-                "http://127.0.0.1:8000/telemetry",
+                "https://gameplay-ai-backend.onrender.com/telemetry",
                 json=telemetry,
                 timeout=0.03
             )

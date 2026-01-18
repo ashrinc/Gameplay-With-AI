@@ -1,7 +1,7 @@
 import axios from "axios";
 
 export const getLiveTelemetry = () =>
-  axios.get("http://127.0.0.1:8000/telemetry/live");
+  axios.get("https://gameplay-ai-backend.onrender.com/telemetry/live");
 
 export const getAgentDecisions = () =>
-  axios.get("http://127.0.0.1:8000/agent/decisions");
+  axios.get("https://gameplay-ai-backend.onrender.com/agent/decisions");
