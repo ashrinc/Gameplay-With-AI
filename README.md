@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # Rein_Block 🎮🧠  
 
 # 🎮 Gameplay With AI — Reinforcement Learning Driven Adaptive Game
