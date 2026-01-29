@@ -18,15 +18,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ ADD THIS ROOT ROUTE (IMPORTANT FOR RENDER)
-@app.get("/")
-def root():
-    return {"message": "Backend running successfully"}
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
 # ------------------ DATABASE SETUP ------------------
 DATABASE_URL = "sqlite:///./reinblock.db"
 
@@ -34,6 +25,7 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine)
 
 Base = declarative_base()
+
 
 # ------------------ DATABASE TABLES ------------------
 class TelemetryDB(Base):
@@ -60,6 +52,7 @@ class AgentDecisionDB(Base):
 
 Base.metadata.create_all(bind=engine)
 
+
 # ------------------ SCHEMAS ------------------
 class Telemetry(BaseModel):
     elapsed_time_s: Optional[float] = 0
@@ -74,9 +67,11 @@ class Telemetry(BaseModel):
     current_fall_speed_pps: Optional[float] = 0
     current_spawn_interval_ms: Optional[float] = 0
 
+
 # ------------------ IN-MEMORY FOR DASHBOARD ------------------
 latest_telemetry: Telemetry = Telemetry()
 agent_decisions: List[dict] = []
+
 
 # ------------------ ENDPOINTS ------------------
 @app.post("/telemetry")
@@ -84,6 +79,7 @@ def receive_telemetry(data: Telemetry):
     global latest_telemetry
     latest_telemetry = data
 
+    # Save to database
     db = SessionLocal()
     entry = TelemetryDB(
         elapsed_time_s=data.elapsed_time_s,
@@ -112,6 +108,7 @@ def receive_agent_decision(data: dict):
     if len(agent_decisions) > 100:
         agent_decisions.pop(0)
 
+    # Save to database
     db = SessionLocal()
     entry = AgentDecisionDB(
         action=data.get("action"),
