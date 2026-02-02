@@ -254,16 +254,18 @@ def main():
             "current_fall_speed_pps": _current_fall_speed,
             "current_spawn_interval_ms": _current_spawn_interval
         }
-
         try:
-            requests.post(
+            r = requests.post(
                 "https://gameplay-ai-backend.onrender.com/telemetry",
                 json=telemetry,
-                timeout=0.03
+                timeout=5  
             )
-        except:
-            pass
-        # -------- END TELEMETRY --------
+            print("POST OK:", r.status_code)
+        except Exception as e:
+            print("POST FAILED:", e)
+
+
+        
 
         pygame.display.flip()
 
