@@ -1,51 +1,53 @@
-# train_dd_agent.py
-# Minimal PPO trainer (PyTorch) for the DDAEnv in env_wrapper.py
-# Usage: python3 train_dd_agent.py
-# Saves model to dda_ppo.pth
+# train_dda_3d.py
+# PPO Trainer for the 3D Space Dogfight DDA environment
+# Usage: python3 train_dda_3d.py
+# Saves model to dda_ppo_3d.pth
 
 import math, time, random
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical
-from env_wrapper import DDAEnv, SimpleSimPlayer
+from env_wrapper_3d import DDAEnv3D, SimPlayer
 
 # ---- Hyperparameters ----
 SEED = 42
 GAMMA = 0.99
 LAMBDA = 0.95
 CLIP_EPS = 0.2
-POLICY_LR = 3e-4
-VALUE_LR = 1e-3
-ENT_COEF = 0.01
+LR = 3e-4
+ENT_COEF = 0.02            # Slightly higher entropy for exploration in larger action space
 VALUE_COEF = 0.5
 MAX_GRAD_NORM = 0.5
 
-NUM_UPDATES = 400         # number of policy updates
-STEPS_PER_UPDATE = 16     # how many env steps per collection before update
+NUM_UPDATES = 600           # More updates for complex 3D env
+STEPS_PER_UPDATE = 32       # More steps per update for stability
 MINI_BATCHES = 4
 EPOCHS = 4
-EPISODE_MS = 20_000       # shorter episodes (20s) for faster samples
-STEP_MS = 1000            # env step corresponds to 1 second game sim
+EPISODE_MS = 40_000         # 40-second episodes
+STEP_MS = 2000              # DDA decision every 2 seconds
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-MODEL_PATH = "dda_ppo.pth"
+MODEL_PATH = "dda_ppo_3d.pth"
 
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 random.seed(SEED)
 
-# ---- Policy / Value networks ----
-class MLPPolicy(nn.Module):
-    def __init__(self, obs_dim, act_dim, hidden=128):
+# ---- Policy/Value Network ----
+class MLPPolicy3D(nn.Module):
+    """Shared-backbone actor-critic for 3D DDA."""
+    def __init__(self, obs_dim=7, act_dim=5, hidden=256):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(obs_dim, hidden),
             nn.Tanh(),
             nn.Linear(hidden, hidden),
-            nn.Tanh()
+            nn.Tanh(),
+            nn.Linear(hidden, hidden // 2),
+            nn.Tanh(),
         )
-        self.actor = nn.Linear(hidden, act_dim)   # logits
-        self.critic = nn.Linear(hidden, 1)
+        self.actor = nn.Linear(hidden // 2, act_dim)
+        self.critic = nn.Linear(hidden // 2, 1)
 
     def forward(self, x):
         h = self.net(x)
@@ -53,57 +55,60 @@ class MLPPolicy(nn.Module):
         value = self.critic(h).squeeze(-1)
         return logits, value
 
-# ---- Helpers ----
+# ---- GAE ----
 def compute_gae(rewards, masks, values, gamma=GAMMA, lam=LAMBDA):
-    # rewards, masks, values are lists/arrays (len = T)
     T = len(rewards)
     advantages = np.zeros(T, dtype=np.float32)
     lastgaelam = 0
     for t in reversed(range(T)):
         nextnonterminal = 1.0 - masks[t]
-        nextvalues = values[t+1] if t + 1 < len(values) else 0.0
+        nextvalues = values[t + 1] if t + 1 < len(values) else 0.0
         delta = rewards[t] + gamma * nextvalues * nextnonterminal - values[t]
         advantages[t] = lastgaelam = delta + gamma * lam * nextnonterminal * lastgaelam
     returns = advantages + values[:T]
     return advantages, returns
 
-# ---- Training loop ----
+# ---- Training ----
 def train():
-    # env & dims
-    sim = SimpleSimPlayer(skill=0.65)   # train against an "average" player
-    env = DDAEnv(sim_player=sim, step_ms=STEP_MS, episode_ms=EPISODE_MS, seed=SEED)
-    obs0 = env.reset()
-    obs_dim = obs0.shape[0]
-    act_dim = 5  # actions: 0..4
+    # Train across player levels so DDA adapts for beginners to pros.
+    skill_levels = [0.2, 0.35, 0.5, 0.65, 0.8, 0.92]
+    current_skill_idx = 0
 
-    policy = MLPPolicy(obs_dim, act_dim, hidden=128).to(DEVICE)
-    optim_policy = torch.optim.Adam([p for p in policy.parameters()], lr=POLICY_LR)
+    sim = SimPlayer(skill=skill_levels[current_skill_idx])
+    env = DDAEnv3D(sim_player=sim, step_ms=STEP_MS, episode_ms=EPISODE_MS, seed=SEED)
 
-    # storage containers
+    obs_dim = 7
+    act_dim = 5
+    policy = MLPPolicy3D(obs_dim, act_dim, hidden=256).to(DEVICE)
+    optimizer = torch.optim.Adam(policy.parameters(), lr=LR)
+
+    obs = env.reset()
+    best_avg_reward = -float('inf')
+
+    print(f"Training 3D Space Dogfight DDA Agent")
+    print(f"Device: {DEVICE}, Updates: {NUM_UPDATES}, Steps/Update: {STEPS_PER_UPDATE}")
+    print(f"Obs dim: {obs_dim}, Act dim: {act_dim}")
+    print("=" * 70)
+
     for update in range(1, NUM_UPDATES + 1):
-        # collect rollout
-        obs_buf = []
-        act_buf = []
-        logp_buf = []
-        rew_buf = []
-        val_buf = []
-        mask_buf = []
+        # ---- Collect rollout ----
+        obs_buf, act_buf, logp_buf, rew_buf, val_buf, mask_buf = [], [], [], [], [], []
 
-        # collect STEPS_PER_UPDATE episodes (not full episodes, but steps)
         for step in range(STEPS_PER_UPDATE):
-            obs = env.reset() if step == 0 and (update == 1) else obs  # preserve obs
-            # for stability, reset occasionally if done
             if step == 0:
+                # Rotate skill level every update for curriculum training
+                current_skill_idx = (update - 1) % len(skill_levels)
+                sim = SimPlayer(skill=skill_levels[current_skill_idx])
+                env = DDAEnv3D(sim_player=sim, step_ms=STEP_MS, episode_ms=EPISODE_MS,
+                               seed=SEED + update)
                 obs = env.reset()
 
-            # single environment: run one step (we can treat each call as one sample)
             obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=DEVICE).unsqueeze(0)
             with torch.no_grad():
                 logits, value = policy(obs_tensor)
-                probs = torch.softmax(logits, dim=-1)
-                m = Categorical(probs)
-                action = m.sample().item()
-                logp = m.log_prob(torch.tensor(action, device=DEVICE)).item()
+                dist = Categorical(logits=logits)
+                action = dist.sample().item()
+                logp = dist.log_prob(torch.tensor(action, device=DEVICE)).item()
                 v = value.item()
 
             next_obs, reward, done, info = env.step(action)
@@ -120,30 +125,29 @@ def train():
             else:
                 obs = next_obs
 
-        # add final value for bootstrap
+        # Bootstrap value
         obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=DEVICE).unsqueeze(0)
         with torch.no_grad():
             _, last_val = policy(obs_tensor)
             last_val = last_val.item()
 
-        # compute GAE advantages
+        # GAE
         values = np.array(val_buf + [last_val], dtype=np.float32)
         advantages, returns = compute_gae(rew_buf, mask_buf, values)
 
-        # convert buffers to tensors
+        # To tensors
         obs_arr = torch.as_tensor(np.array(obs_buf, dtype=np.float32), device=DEVICE)
         acts_arr = torch.as_tensor(np.array(act_buf), device=DEVICE)
         old_logp_arr = torch.as_tensor(np.array(logp_buf, dtype=np.float32), device=DEVICE)
         adv_arr = torch.as_tensor(advantages, device=DEVICE)
         ret_arr = torch.as_tensor(returns, device=DEVICE)
 
-        # normalize advantages
+        # Normalize advantages
         adv_arr = (adv_arr - adv_arr.mean()) / (adv_arr.std() + 1e-8)
 
-        # PPO update epochs
+        # ---- PPO update ----
         batch_size = max(1, len(obs_arr) // MINI_BATCHES)
         for epoch in range(EPOCHS):
-            # shuffle indices
             idxs = np.arange(len(obs_arr))
             np.random.shuffle(idxs)
             for start in range(0, len(obs_arr), batch_size):
@@ -155,7 +159,7 @@ def train():
                 mb_ret = ret_arr[mb_idx]
 
                 logits, values_pred = policy(mb_obs)
-                dist = torch.distributions.Categorical(logits=logits)
+                dist = Categorical(logits=logits)
                 mb_logp = dist.log_prob(mb_acts)
                 mb_entropy = dist.entropy().mean()
 
@@ -163,31 +167,40 @@ def train():
                 surr1 = ratio * mb_adv
                 surr2 = torch.clamp(ratio, 1.0 - CLIP_EPS, 1.0 + CLIP_EPS) * mb_adv
                 policy_loss = -torch.min(surr1, surr2).mean()
-
                 value_loss = (mb_ret - values_pred).pow(2).mean()
 
                 loss = policy_loss + VALUE_COEF * value_loss - ENT_COEF * mb_entropy
 
-                optim_policy.zero_grad()
+                optimizer.zero_grad()
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(policy.parameters(), MAX_GRAD_NORM)
-                optim_policy.step()
+                nn.utils.clip_grad_norm_(policy.parameters(), MAX_GRAD_NORM)
+                optimizer.step()
 
-        # logging
-        avg_rew = np.mean(rew_buf) if len(rew_buf)>0 else 0.0
-        avg_acc = info.get("accuracy", 0.0)
-        print(f"[{update}/{NUM_UPDATES}] avg_rew={avg_rew:.3f} last_acc={avg_acc:.3f} "
-              f"speed={env.target_fall_speed:.1f} spawn_ms={env.target_spawn_interval:.0f}")
+        # ---- Logging ----
+        avg_rew = np.mean(rew_buf)
+        if update % 10 == 0 or update <= 5:
+            skill = skill_levels[current_skill_idx]
+            print(f"[{update:3d}/{NUM_UPDATES}] skill={skill:.1f} avg_rew={avg_rew:+.2f} "
+                  f"kills={info.get('kills',0)} acc={info.get('aim_accuracy',0):.2f} "
+                  f"hp={info.get('health',0):.0f} wave={info.get('wave',0)} "
+                  f"e_count={info.get('enemy_count',0)} e_spd={info.get('enemy_speed', 0):.0f} "
+                  f"e_hp={info.get('enemy_hp',0):.0f}")
 
-        # periodically save
-        if update % 50 == 0 or update == NUM_UPDATES:
+        # Save best + periodic
+        if avg_rew > best_avg_reward:
+            best_avg_reward = avg_rew
             torch.save(policy.state_dict(), MODEL_PATH)
-            print("Saved model to", MODEL_PATH)
+        if update % 100 == 0 or update == NUM_UPDATES:
+            torch.save(policy.state_dict(), MODEL_PATH)
+            print(f"  → Saved model to {MODEL_PATH}")
 
-    print("Training complete. Model saved to", MODEL_PATH)
+    print(f"\nTraining complete! Best avg_reward: {best_avg_reward:.2f}")
+    print(f"Model saved to {MODEL_PATH}")
     return policy
+
 
 if __name__ == "__main__":
     start = time.time()
     policy = train()
-    print("Elapsed:", time.time() - start)
+    elapsed = time.time() - start
+    print(f"Total training time: {elapsed:.1f}s ({elapsed/60:.1f} min)")

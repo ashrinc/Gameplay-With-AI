@@ -1,0 +1,29 @@
+# ---------------------------------------------------------
+# NOTICE: FRONTEND DEPENDENCIES
+# ---------------------------------------------------------
+# The dashboard is built with Node.js and React (JavaScript), 
+# which means it DOES NOT use Python's "pip" or requirements.txt natively.
+#
+# The actual "requirements file" for this dashboard is: package.json
+#
+# HOW TO INSTALL:
+# 1. Open terminal and go to the dashboard folder: cd dashboard
+# 2. Run the Node Package Manager install command: npm install
+# 3. Start the dashboard server: npm start
+#
+# ---------------------------------------------------------
+# Dashboard Packages (Mapped from package.json):
+# ---------------------------------------------------------
+
+react @ 19.2.3
+react-dom @ 19.2.3
+react-scripts @ 5.0.1
+axios @ 1.13.2          (Used for API calls to the FastAPI backend)
+recharts @ 3.6.0        (Used for drawing the DDA telemetry graphs)
+web-vitals @ 2.1.4
+
+# Testing frameworks included:
+@testing-library/react @ 16.3.1
+@testing-library/jest-dom @ 6.9.1
+@testing-library/user-event @ 13.5.0
+@testing-library/dom @ 10.4.1
