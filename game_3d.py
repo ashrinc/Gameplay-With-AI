@@ -552,64 +552,52 @@ class GameState:
             self.recovery_cooldown = 5  # Start a 5-step breather period
 
         # ── Calculate Actual Action ──
-        decision_source = "model"
         if self.recovery_cooldown > 0:
             self.recovery_cooldown -= 1
             action = 4  # EASIER-- strictly enforced during cooldown
             decision_source = "recovery"
         else:
             # ─────────────────────────────────────────────────────────
-            # WORKING HEURISTIC DDA (model is broken, disabled)
+            # ACTUAL DDA AGENT DEPLOYMENT
             # ─────────────────────────────────────────────────────────
-            # Simple rules that actually work:
-            # 1. If player healthy & making kills → increase difficulty
-            # 2. If player taking damage → give relief
-            # 3. If both extremes true → balance
-
-            # Check if player is doing well
-            is_dominating = (
-                health_ratio > 0.7 and
-                kill_rate > 0.3 and
-                accuracy_ratio > 0.4
-            )
-
-            # Check if player is in trouble
-            taking_heavy_damage = (
-                health_ratio < 0.5 or
-                player.asteroid_hits >= 1 or
-                damage_taken_recently > 5.0
-            )
-
-            # Check if at difficulty extremes
-            at_max_difficulty = (
-                self.enemy_count >= DDA_MAX_ENEMY_COUNT - 1 and
-                self.enemy_speed >= DDA_MAX_ENEMY_SPEED - 20 and
-                self.spawn_delay <= 0.3
-            )
-
-            at_min_difficulty = (
-                self.enemy_count <= DDA_MIN_ENEMY_COUNT and
-                self.enemy_speed <= DDA_MIN_ENEMY_SPEED + 10 and
-                self.spawn_delay >= 1.4
-            )
-
-            # Make decision
-            if taking_heavy_damage and not at_min_difficulty:
-                action = 4  # EASIER-- for relief
-                decision_source = "heuristic-relief"
-            elif is_dominating and not at_max_difficulty:
-                action = 3  # HARDER++ to challenge
-                decision_source = "heuristic-challenge"
-            elif is_dominating:
-                action = 1  # HARDER+ (at max, still try to push)
-                decision_source = "heuristic-maxed"
-            elif at_min_difficulty and health_ratio > 0.5:
-                # At minimum but player fine = gradually increase to find sweet spot
-                action = 1  # Soft increase
-                decision_source = "heuristic-baseline"
-            else:
-                action = 0  # HOLD - maintain current difficulty
-                decision_source = "heuristic-steady"
+            decision_source = "model"
+            
+            # Construct observation tensor (matches DDAEnv3D perfectly)
+            shield_ratio = player.shield / player.max_shield
+            wave_norm = min(self.wave / 10.0, 1.0)
+            enemies_norm = min(len(self.enemies) / 15.0, 1.0)
+            
+            obs_array = np.array([
+                accuracy_ratio,
+                min(kill_rate / 2.0, 1.0),
+                min(dmg_rate / 30.0, 1.0),
+                health_ratio,
+                shield_ratio,
+                wave_norm,
+                enemies_norm
+            ], dtype=np.float32)
+            
+            obs_tensor = torch.as_tensor(obs_array, dtype=torch.float32).unsqueeze(0)
+            
+            try:
+                with torch.no_grad():
+                    if self.agent_type == "LSTM":
+                        logits, _, (h_new, c_new) = self.agent(
+                            obs_tensor, 
+                            (self.lstm_h, self.lstm_c) if self.lstm_h is not None else None
+                        )
+                        self.lstm_h = h_new
+                        self.lstm_c = c_new
+                        action = torch.argmax(logits, dim=-1).item()
+                    elif self.agent_type == "MLP":
+                        logits, _ = self.agent(obs_tensor)
+                        action = torch.argmax(logits, dim=-1).item()
+                    else:
+                        action = 0
+            except Exception as e:
+                print(f"Model failed: {e}")
+                action = 0
+                decision_source = "fallback"
 
         # ─────────────────────────────────────────────────────────
         # FIX 1 & 5: Difficulty Smoothing & Soft Adjust
@@ -857,7 +845,7 @@ def draw_legend(surface):
     surface.blit(t, (38, HEIGHT - 82))
 
     # Deaths
-    t = font_sm.render("⚠️ 3 asteroids OR health=0 = END", True, NEON_RED)
+    t = font_sm.render("⚠️ Crash/Asteroid OR health=0 = END", True, NEON_RED)
     surface.blit(t, (15, HEIGHT - 50))
 
 def draw_level_select(surface):
@@ -870,7 +858,7 @@ def draw_level_select(surface):
     instructions = [
         "🔴 RED SHIPS = SHOOT!",
         "🟤 BROWN ASTEROIDS = AVOID!",
-        f"⚠️ 3 asteroid hits OR health→0 = GAME OVER",
+        f"⚠️ 1 asteroid/crash OR health→0 = GAME OVER",
         "📊 AI Difficulty: AUTO-ADJUSTS to your skill",
         "",
         "↑ WASD/Arrows = Move  | SPACE = Shoot",
@@ -996,7 +984,7 @@ def main():
 
             # Collision with player
             if e.alive and abs(e.x - player.x) < 25 and abs(e.y - player.y) < 25:
-                player.take_damage(25)
+                player.health = 0  # Crash into enemy ship is instant death!
                 e.alive = False
                 spawn_explosion(e.x, e.y, 15, NEON_RED)
 
@@ -1009,8 +997,8 @@ def main():
                 player.asteroid_hits += 1
                 a.alive = False
                 spawn_explosion(a.x, a.y, 10, ORANGE)
-                if player.asteroid_hits >= 3:
-                    gs.game_over = True
+                player.health = 0  # One hit from asteroid now instantly kills player!
+                gs.game_over = True
 
         gs.asteroids_list = [a for a in gs.asteroids_list if a.alive]
 

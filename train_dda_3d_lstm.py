@@ -214,9 +214,8 @@ def train():
         batch_idxs = list(range(len(obs_arr)))
 
         for epoch in range(EPOCHS):
-            random.shuffle(batch_idxs)
-
-            # Process whole sequence per epoch (BPTT)
+            # Process whole sequence per epoch (BPTT) in its ORIGINAL correct order!
+            # Do NOT shuffle the temporal sequence, or LSTM memory becomes incoherent garbage.
             obs_seq = obs_arr[batch_idxs].unsqueeze(1)  # (seq_len, 1, obs_dim) for single batch
             acts_seq = acts_arr[batch_idxs].unsqueeze(1)  # (seq_len, 1)
             old_logp_seq = old_logp_arr[batch_idxs].unsqueeze(1)  # (seq_len, 1)
