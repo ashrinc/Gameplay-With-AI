@@ -1,201 +1,74 @@
+# Gamee - AI Dynamic Difficulty Space Dogfight
 
-# Rein_Block 🎮🧠  
+Welcome to **Gamee**, a beautifully polished Pygame arcade shooter that intelligently adapts to your skill level using Reinforcement Learning! The game features a proximal policy optimization (PPO) machine learning agent that acts as a true AI Game Master—tracking your hit accuracy, damage rates, and flow state to adjust enemy parameters on the fly. 
 
-# 🎮 Gameplay With AI — Reinforcement Learning Driven Adaptive Game
-
-A full-stack AI project where a Reinforcement Learning agent dynamically adjusts game difficulty based on player performance.  
-Includes a live Pygame game, FastAPI backend, and React analytics dashboard.
-
-🔗 **Live Dashboard:**  
-https://gameplay-with-ai-ralm.vercel.app
-
-🔗 **Live Backend API:**  
-https://gameplay-ai-backend.onrender.com
+If you are dominating, the AI pushes the limits (faster ships, more health, quicker spawn delays). If you are struggling, the AI pulls back to give you room to breathe. 
 
 ---
 
-## 📌 Features
+## 🚀 Features
 
-- 🎮 Pygame arcade-style dodging game  
-- 🧠 Reinforcement Learning (PPO) controls difficulty dynamically  
-- 📡 Real-time telemetry streaming to backend  
-- ⚙️ FastAPI backend with REST endpoints  
-- 📊 React dashboard with live visualizations  
-- 🌐 Fully deployed (Vercel + Render)  
+- **Fluid Space Dogfighting:** Fast-paced action requiring precise maneuvering to dodge enemy fire and asteroids. 
+- **AI DDA (Dynamic Difficulty Adjustment):** A locally deployed, pre-trained neural network (MLP Policy) actively tracks 7 telemetry parameters (such as `accuracy_ratio`, `kill_rate`, `health`, etc.) every 2 seconds to scale difficulty accurately in real-time. 
+- **Hardcore Rules:** No second chances for crashing! Crashing into an enemy ship or an asteroid instantly results in game over.
+- **FastAPI Telemetry Backend:** A modern backend running FastAPI connected to a PostgreSQL database streams your gameplay sessions securely so that you can view your real-time analytics.
+- **React Dashboard:** A beautiful React frontend dashboard to analyze your gameplay metrics across sessions, mapping out your difficulty curves visually.
+- **Model Training Pipelines:** Want to train your own difficulty scaler? Simply run `train_dda_3d.py` (or the temporal coherent `train_dda_3d_lstm.py`) to run simulated headless environments using PPO.
 
----
+## 🛠 Project Structure
 
-## 🧱 Architecture
+- `game_3d.py` - The core game engine containing Pygame mechanics and live PPO Inference integration via PyTorch.
+- `env_wrapper_3d.py` - The headless reinforcement learning environment that simulates a player testing boundaries for training purposes.
+- `train_dda_3d.py` / `train_dda_3d_lstm.py` - Training scripts establishing standard stateful MLP and sequence memory pipelines.
+- `dda_ppo_3d.pth` - The active trained PyTorch Multi-layer Perceptron logic weights determining your game.  
+- `/backend_fastapi/` - Telemetry APIs linking SQL models together.
+- `/dashboard/` - React SPA for analyzing database hits.
+- `dda_curve_visualizer.py` / `dda_logger.py` / `dda_plot.py` - Extraneous charting tools for difficulty curving.
 
-```
+## ⚙️ How to Play
 
-Local Machine:
+### 1. Requirements
 
-* Game (Pygame + RL Agent)
-
-Cloud:
-
-* Backend (FastAPI on Render)
-* Dashboard (React on Vercel)
-
-Game → sends telemetry → Backend
-Dashboard → fetches live data → Backend
-
-```
-
----
-
-## 📁 Project Structure
-
-```
-
-gamee/
-├── game.py
-├── train_dd_agent.py
-├── dda_ppo.pth
-├── backend_fastapi/
-│   ├── main.py
-│   └── requirements.txt
-├── dashboard/
-│   ├── package.json
-│   └── src/
-
-````
-
----
-
-## ⚙️ Local Setup (Run Game on Your Machine)
-
-### 1. Clone the repository
-
+Ensure you are using Python 3+ and have installed all requirements:
 ```bash
-git clone https://github.com/ashrinc/Gameplay-With-AI.git
-cd Gameplay-With-AI
-````
-
----
-
-### 2. Create and activate virtual environment
-
-```bash
-python3 -m venv venv
-source venv/bin/activate   # macOS/Linux
-```
-
-On Windows:
-
-```bash
-venv\Scripts\activate
-```
-
----
-
-### 3. Install Python dependencies
-
-```bash
+pip install -r requirements.txt
 pip install -r backend_fastapi/requirements.txt
 ```
 
-If pygame is missing:
+*(You will also need an instance of PostgreSQL configured on `localhost:5432` if you want to use the backend/dashboard).*
 
+### 2. Launch the Game
 ```bash
-pip install pygame requests torch numpy
+python3 game_3d.py
 ```
 
----
+### 3. Controls
+- **Movement:** `W A S D` or `Arrow Keys`
+- **Shoot:** `SPACE`
+- **Restart:** `R`
+- **Quit:** `ESC` or `Q`
 
-### 4. Run the game
+Watch closely: 
+- 🔴 **Red Ships** - Shoot these immediately. They shoot back with varied speeds and health intervals dictated by the AI.
+- 🟤 **Brown Asteroids** - Avoid! A single asteroid hit is instant death.
 
+### 4. Running the Dashboard (Optional)
+In terminal 1: 
 ```bash
-python game.py
+cd backend_fastapi
+uvicorn main:app --reload
+```
+In terminal 2:
+```bash
+cd dashboard
+npm install
+npm start
 ```
 
-Now play the game using:
+## 🧠 Retraining the AI models
+Want to manipulate how the agent learns?
+1. Modify the rewards system located in `env_wrapper_3d.py`.
+2. Run `python3 train_dda_3d.py` (Fast, momentary inference).
+3. The new configurations will overwrite your `.pth` parameters, making your DDA behave fully autonomously around your new preferences!
 
-* ⬅️ Left Arrow
-* ➡️ Right Arrow
-
-The game will automatically:
-
-* Send telemetry to the deployed backend
-* Update the deployed dashboard in real time
-
----
-
-## 🌐 Viewing Live Data (No setup required)
-
-You don’t need to run backend or frontend locally.
-
-Just open:
-
-### 📊 Live Dashboard
-
-```
-https://gameplay-with-ai-ralm.vercel.app
-```
-
-### 📡 Backend API
-
-```
-https://gameplay-ai-backend.onrender.com/telemetry/live
-https://gameplay-ai-backend.onrender.com/agent/decisions
-```
-
-When the game is running, these endpoints update live.
-
----
-
-## 🧠 How the AI Works
-
-* The game tracks player performance:
-
-  * Accuracy
-  * Mistakes
-  * Survival time
-  * Block collisions
-* These metrics form the **state**
-* A trained PPO agent chooses actions like:
-
-  * Increase difficulty
-  * Decrease difficulty
-  * Keep difficulty stable
-* This creates a **Dynamic Difficulty Adjustment (DDA)** system used in real-world games
-
----
-
-## 🛠 Tech Stack
-
-| Layer      | Technology                          |
-| ---------- | ----------------------------------- |
-| Game       | Python, Pygame                      |
-| AI         | PyTorch, PPO (RL)                   |
-| Backend    | FastAPI                             |
-| Frontend   | React.js                            |
-| Charts     | Recharts                            |
-| Deployment | Render (backend), Vercel (frontend) |
-
----
-
-## 🎯 Use Cases
-
-* AI-powered adaptive systems
-* Game analytics platforms
-* Human-in-the-loop learning demos
-* RL + Full Stack portfolio project
-* Interview-ready project (AI + Backend + Frontend)
-
----
-
-## 👩‍💻 Author
-
-**Ashritha**
-Built as an advanced AI + Full Stack portfolio project.
-
----
-
-## ⭐ If you like this project
-
-Star the repo and feel free to fork and extend it.
-
-
-
+Enjoy the dogfight!
